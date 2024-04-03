@@ -1,0 +1,8 @@
+../Core/Src/xl320.c:47:1:XL320_Init	1
+../Core/Src/xl320.c:58:1:XL320_Set_UART_RxTxMode	1
+../Core/Src/xl320.c:62:1:XL320_Write_Data	1
+../Core/Src/xl320.c:100:1:XL320_Set_Position	1
+../Core/Src/xl320.c:106:1:XL320_Set_Speed	3
+../Core/Src/xl320.c:119:1:XL320_Set_Torque_Limit	1
+../Core/Src/xl320.c:125:1:XL320_Set_Led_Color	1
+../Core/Src/xl320.c:131:1:XL320_Update_CRC	2

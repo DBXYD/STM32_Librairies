@@ -23,7 +23,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "xl320.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -33,67 +33,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define baudrate 1000000
+#define XL320_BAUDRATE 1000000
 #define XL320_ID 1
 
-////////// EEPROM ///////////
-#define REG_MODEL_NUMBER            0
-#define REG_VERSION                 2
-#define REG_XL_ID                   3
-#define REG_BAUD_RATE               4	//0: 9600, 1:57600, 2:115200, 3:1Mbps
-#define REG_RETURN_DELAY_TIME       5
-#define REG_CW_ANGLE_LIMIT          6
-#define REG_CCW_ANGLE_LIMIT         8
-#define REG_SYSTEM_DATA2            10
-#define REG_CONTROL_MODE            11
-#define REG_LIMIT_TEMPERATURE       12
-#define REG_LOWER_LIMIT_VOLTAGE     13
-#define REG_UPPER_LIMIT_VOLTAGE     14
-#define REG_MAX_TORQUE              15
-#define REG_RETURN_LEVEL            17
-#define REG_ALARM_SHUTDOWN          18
 
-////////// RAM ///////////
-#define REG_TORQUE_ENABLE           24
-#define REG_LED                     25
-#define REG_D_GAIN                  27
-#define REG_I_GAIN                  28
-#define REG_P_GAIN                  29
-#define REG_GOAL_POSITION           30
-#define REG_GOAL_SPEED              32
-#define REG_GOAL_TORQUE             35
-#define REG_PRESENT_POSITION        37
-#define REG_PRESENT_SPEED           39
-#define REG_PRESENT_LOAD            41
-#define REG_PRESENT_VOLTAGE         45
-#define REG_PRESENT_TEMPERATURE     46
-#define REG_REGISTERED_INSTRUCTION  47
-#define REG_MOVING                  49
-#define REG_HARDWARE_ERROR_STATUS   50
-#define REG_PUNCH                   51
-
-////////// INSTRUCTION ///////////
-#define PING                    1
-#define READ_DATA               2
-#define WRITE_DATA              3
-#define REG_WRITE               4
-#define ACTION                  5
-#define FACTORY_RESET           6
-#define REBOOT                  8
-#define STATUS                  85
-#define SYNC_READ               130
-#define SYNC_WRITE              131
-#define BULK_READ               146
-#define BULK_WRITE              147
-
-#define LED_OFF 	0
-#define LED_RED 	1
-#define LED_GREEN 	2
-#define LED_YELLOW	3
-#define LED_BLUE	4
-#define LED_PURPLE	5
-#define LED_CYAN	6
-#define LED_WHITE	7
 
 /* USER CODE END PD */
 
@@ -175,7 +118,7 @@ int main(void)
 {
 
 	/* USER CODE BEGIN 1 */
-
+	uint16_t led = 0;
 	/* USER CODE END 1 */
 
 	/* MCU Configuration--------------------------------------------------------*/
@@ -200,6 +143,7 @@ int main(void)
 	MX_USART1_UART_Init();
 	/* USER CODE BEGIN 2 */
 	HAL_UART_Transmit(&huart2, simpleCodeInstr, sizeof(simpleCodeInstr), 10);
+	XL320_Init(&hxl320, &huart1, TX_EN_GPIO_Port, TX_EN_Pin, XL320_ID, XL320_BAUDRATE);
 
 	/* USER CODE END 2 */
 
@@ -207,6 +151,20 @@ int main(void)
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
+
+		XL320_Set_Led_Color(&hxl320, XL320_LED_CYAN);
+		XL320_Set_Speed(&hxl320, 64);
+		XL320_Set_Torque_Limit(&hxl320, 256);
+		XL320_Set_Position(&hxl320, 0);
+
+		HAL_Delay(5000);
+
+		XL320_Set_Led_Color(&hxl320, XL320_LED_PURPLE);
+		XL320_Set_Speed(&hxl320, 256);
+		XL320_Set_Torque_Limit(&hxl320, 256);
+		XL320_Set_Position(&hxl320, 1023);
+
+		HAL_Delay(5000);
 		// PING : Checked
 		//				XL320_Tx_Buffer[0] = 0xFF; 					// Header 1
 		//				XL320_Tx_Buffer[1] = 0xFF; 					// Header 2
@@ -223,90 +181,6 @@ int main(void)
 		//				HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, RESET);
 		//
 		//				HAL_Delay(100);
-
-		// LED PURPLE
-		XL320_Tx_Buffer[0] = 0xFF; 					// Header 1
-		XL320_Tx_Buffer[1] = 0xFF; 					// Header 2
-		XL320_Tx_Buffer[2] = 0xFD; 					// Header 3
-		XL320_Tx_Buffer[3] = 0x00; 					// Reserved
-		XL320_Tx_Buffer[4] = XL320_ID;				// ID
-		XL320_Tx_Buffer[5] = 0x07;					// Length 1 (Low) (Nb param + Instr + CRC)
-		XL320_Tx_Buffer[6] = 0x00;					// Length 2 (Hi)
-		XL320_Tx_Buffer[7] = 0x03;					// Instruction (Write)
-		XL320_Tx_Buffer[8] = REG_LED;	// Param 1 (Low)
-		XL320_Tx_Buffer[9] = 0x00;					// Param 1 (High)
-		XL320_Tx_Buffer[10] = LED_PURPLE;			// Param 2 (Low)
-		XL320_Tx_Buffer[11] = 0x00;					// Param 2 (High)
-		crc = update_crc(0, XL320_Tx_Buffer, 12);
-		XL320_Tx_Buffer[12] = crc & 0x00FF;			// CRC 1 (Low)
-		XL320_Tx_Buffer[13] = (crc >> 8) &0x00FF;	// CRC 2 (High)
-		HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, SET);
-		HAL_UART_Transmit(&huart1, XL320_Tx_Buffer, 14, 100);
-		HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, RESET);
-
-		// POSITION 0° (0x0000)
-		XL320_Tx_Buffer[0] = 0xFF; 					// Header 1
-		XL320_Tx_Buffer[1] = 0xFF; 					// Header 2
-		XL320_Tx_Buffer[2] = 0xFD; 					// Header 3
-		XL320_Tx_Buffer[3] = 0x00; 					// Reserved
-		XL320_Tx_Buffer[4] = XL320_ID;				// ID
-		XL320_Tx_Buffer[5] = 0x07;					// Length 1 (Low) (Nb param + Instr + CRC)
-		XL320_Tx_Buffer[6] = 0x00;					// Length 2 (Hi)
-		XL320_Tx_Buffer[7] = 0x03;					// Instruction (Write)
-		XL320_Tx_Buffer[8] = REG_GOAL_POSITION;		// Param 1 (Low)
-		XL320_Tx_Buffer[9] = 0x00;					// Param 1 (High)
-		XL320_Tx_Buffer[10] = 0x00;					// Param 2 (Low)
-		XL320_Tx_Buffer[11] = 0x00;					// Param 2 (High)
-		crc = update_crc(0, XL320_Tx_Buffer, 12);
-		XL320_Tx_Buffer[12] = crc & 0x00FF;			// CRC 1 (Low)
-		XL320_Tx_Buffer[13] = (crc >> 8) &0x00FF;	// CRC 2 (High)
-		HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, SET);
-		HAL_UART_Transmit(&huart1, XL320_Tx_Buffer, 14, 100);
-		HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, RESET);
-
-		HAL_Delay(2000);
-
-		// LED GREEN
-		XL320_Tx_Buffer[0] = 0xFF; 					// Header 1
-		XL320_Tx_Buffer[1] = 0xFF; 					// Header 2
-		XL320_Tx_Buffer[2] = 0xFD; 					// Header 3
-		XL320_Tx_Buffer[3] = 0x00; 					// Reserved
-		XL320_Tx_Buffer[4] = XL320_ID;				// ID
-		XL320_Tx_Buffer[5] = 0x07;					// Length 1 (Low) (Nb param + Instr + CRC)
-		XL320_Tx_Buffer[6] = 0x00;					// Length 2 (Hi)
-		XL320_Tx_Buffer[7] = 0x03;					// Instruction (Write)
-		XL320_Tx_Buffer[8] = REG_LED;				// Param 1 (Low)
-		XL320_Tx_Buffer[9] = 0x00;					// Param 1 (High)
-		XL320_Tx_Buffer[10] = LED_GREEN;			// Param 2 (Low)
-		XL320_Tx_Buffer[11] = 0x00;					// Param 2 (High)
-		crc = update_crc(0, XL320_Tx_Buffer, 12);
-		XL320_Tx_Buffer[12] = crc & 0x00FF;			// CRC 1 (Low)
-		XL320_Tx_Buffer[13] = (crc >> 8) &0x00FF;	// CRC 2 (High)
-		HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, SET);
-		HAL_UART_Transmit(&huart1, XL320_Tx_Buffer, 14, 100);
-		HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, RESET);
-
-		// POSITION 300° OK (0x03FF)
-		XL320_Tx_Buffer[0] = 0xFF; 					// Header 1
-		XL320_Tx_Buffer[1] = 0xFF; 					// Header 2
-		XL320_Tx_Buffer[2] = 0xFD; 					// Header 3
-		XL320_Tx_Buffer[3] = 0x00; 					// Reserved
-		XL320_Tx_Buffer[4] = XL320_ID;				// ID
-		XL320_Tx_Buffer[5] = 0x07;					// Length 1 (Low) (Nb param + Instr + CRC)
-		XL320_Tx_Buffer[6] = 0x00;					// Length 2 (Hi)
-		XL320_Tx_Buffer[7] = 0x03;					// Instruction (Write)
-		XL320_Tx_Buffer[8] = REG_GOAL_POSITION;		// Param 1 (Low)
-		XL320_Tx_Buffer[9] = 0x00;					// Param 1 (High)
-		XL320_Tx_Buffer[10] = 0xFF;					// Param 2 (Low)
-		XL320_Tx_Buffer[11] = 0x03;					// Param 2 (High)
-		crc = update_crc(0, XL320_Tx_Buffer, 12);
-		XL320_Tx_Buffer[12] = crc & 0x00FF;			// CRC 1 (Low)
-		XL320_Tx_Buffer[13] = (crc >> 8) &0x00FF;	// CRC 2 (High)
-		HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, SET);
-		HAL_UART_Transmit(&huart1, XL320_Tx_Buffer, 14, 100);
-		HAL_GPIO_WritePin(TX_EN_GPIO_Port, TX_EN_Pin, RESET);
-
-		HAL_Delay(2000);
 		/* USER CODE END WHILE */
 
 		/* USER CODE BEGIN 3 */
