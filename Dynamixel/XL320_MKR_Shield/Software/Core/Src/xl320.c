@@ -44,7 +44,12 @@ const uint16_t crc_table[256] = {
 		0x8213, 0x0216, 0x021C, 0x8219, 0x0208, 0x820D, 0x8207, 0x0202
 };
 
-XL320_Init(__XL320_HandleTypeDef *XL320_Handle, UART_HandleTypeDef *huart, GPIO_TypeDef *TxEnPort, uint16_t TxEnPin, uint8_t id, uint8_t baudrate){
+const uint8_t msg_ping_correct[]="Ping request successfull\r\n";
+const uint8_t msg_ping_error[]="No response from ping request\r\n";
+const uint8_t msg_ping_crc_error[]="Incorrect CRC in ping answer\r\n";
+
+
+void XL320_Init(__XL320_HandleTypeDef *XL320_Handle, UART_HandleTypeDef *huart, GPIO_TypeDef *TxEnPort, uint16_t TxEnPin, uint8_t id, uint8_t baudrate){
 	XL320_Handle->huart = huart;
 	XL320_Handle->tx_En_Port = TxEnPort;
 	XL320_Handle->tx_En_Pin = TxEnPin;
@@ -55,11 +60,80 @@ XL320_Init(__XL320_HandleTypeDef *XL320_Handle, UART_HandleTypeDef *huart, GPIO_
 	// Set in RX mode
 	XL320_Set_UART_RxTxMode(XL320_Handle, XL320_UART_RX);
 }
-XL320_Set_UART_RxTxMode(__XL320_HandleTypeDef *XL320_Handle, GPIO_PinState mode){
+
+void XL320_Init_debug(__XL320_HandleTypeDef *XL320_Handle, UART_HandleTypeDef *huart, UART_HandleTypeDef *huart_debug, GPIO_TypeDef *TxEnPort, uint16_t TxEnPin, uint8_t id, uint8_t baudrate){
+	XL320_Handle->huart = huart;
+	XL320_Handle->huart_debug = huart_debug;
+	XL320_Handle->tx_En_Port = TxEnPort;
+	XL320_Handle->tx_En_Pin = TxEnPin;
+	XL320_Handle->id = id;
+	XL320_Handle->baudrate = baudrate;
+	XL320_Handle->control_mode = 2;
+	XL320_Handle->max_torque = 1023;
+	// Set in RX mode
+	XL320_Set_UART_RxTxMode(XL320_Handle, XL320_UART_RX);
+}
+
+HAL_StatusTypeDef XL320_Ping(__XL320_HandleTypeDef *XL320_Handle){
+	// Header + reserved
+	XL320_Handle->tx_buffer[0] = XL320_HEADER_1;
+	XL320_Handle->tx_buffer[1] = XL320_HEADER_2;
+	XL320_Handle->tx_buffer[2] = XL320_HEADER_3;
+	XL320_Handle->tx_buffer[3] = XL320_RSRV;
+
+	// ID
+	XL320_Handle->tx_buffer[4] = XL320_Handle->id;
+
+	// Length (Nb param + Instru + CRC)
+	XL320_Handle->tx_buffer[5] = 0x03; 					// Length (Low)
+	XL320_Handle->tx_buffer[6] = 0x00;					// Length (High)
+
+	// Instruction : write
+	XL320_Handle->tx_buffer[7] = XL320_INST_PING;
+
+	XL320_Handle->tx_data_length = 8;
+	XL320_Update_CRC(XL320_Handle);
+	XL320_Handle->tx_buffer[8] = (XL320_Handle->crc) & 0x00FF;
+	XL320_Handle->tx_buffer[9] = (XL320_Handle->crc >> 8) & 0x00FF;
+
+	XL320_Set_UART_RxTxMode(XL320_Handle, XL320_UART_TX);
+	HAL_UART_Transmit(XL320_Handle->huart, XL320_Handle->tx_buffer, XL320_Handle->tx_data_length + XL320_CRC_LENGTH, 10);
+	XL320_Set_UART_RxTxMode(XL320_Handle, XL320_UART_RX);
+
+	if(HAL_ERROR == HAL_UART_Receive(XL320_Handle->huart, XL320_Handle->rx_buffer, 14, 10)){
+		HAL_UART_Transmit(XL320_Handle->huart_debug, msg_ping_error, sizeof(msg_ping_error), 10);
+		return HAL_ERROR;
+	}
+
+	XL320_Handle->rx_data_length = XL320_Handle->rx_buffer[5]+(XL320_Handle->rx_buffer[6]<<8);
+
+	if(XL320_Check_CRC(XL320_Handle) == HAL_ERROR){
+		HAL_UART_Transmit(XL320_Handle->huart_debug, msg_ping_crc_error, sizeof(msg_ping_crc_error), 10);
+		return HAL_ERROR;
+	}
+	HAL_UART_Transmit(XL320_Handle->huart_debug, msg_ping_correct, sizeof(msg_ping_correct), 10);
+
+	XL320_Handle->error_code = XL320_Handle->rx_buffer[8]; // ERR Code
+	XL320_Handle->model_number = XL320_Handle->rx_buffer[9] + (XL320_Handle->rx_buffer[10]<<8);
+	XL320_Handle->firmware_version = XL320_Handle->rx_buffer[11];
+
+	XL320_Handle->tx_data_debug_length = snprintf(XL320_Handle->tx_buffer_debug, MAX_BUFFER_DEBUG_LENGTH,
+			"Model number :     %6d \r\n"
+			"Firmware version : %6d \r\n"
+			"Error code :       %6d \r\n"
+			"ID :               %6d \r\n",
+			XL320_Handle->model_number, XL320_Handle->firmware_version, XL320_Handle->error_code, XL320_Handle->id);
+	HAL_UART_Transmit(XL320_Handle->huart_debug, XL320_Handle->tx_buffer_debug, XL320_Handle->tx_data_debug_length, 10);
+
+	return HAL_OK;
+}
+
+void XL320_Set_UART_RxTxMode(__XL320_HandleTypeDef *XL320_Handle, GPIO_PinState mode){
 
 	HAL_GPIO_WritePin(XL320_Handle->tx_En_Port, XL320_Handle->tx_En_Pin, mode);
 }
-XL320_Write_Data(__XL320_HandleTypeDef *XL320_Handle, uint16_t Address, uint16_t Value){
+
+void XL320_Write_Data(__XL320_HandleTypeDef *XL320_Handle, uint16_t Address, uint16_t Value){
 	// Header + reserved
 	XL320_Handle->tx_buffer[0] = XL320_HEADER_1;
 	XL320_Handle->tx_buffer[1] = XL320_HEADER_2;
@@ -96,14 +170,14 @@ XL320_Write_Data(__XL320_HandleTypeDef *XL320_Handle, uint16_t Address, uint16_t
 	HAL_UART_Transmit(XL320_Handle->huart, XL320_Handle->tx_buffer, XL320_Handle->tx_data_length + XL320_CRC_LENGTH, 10);
 	XL320_Set_UART_RxTxMode(XL320_Handle, XL320_UART_RX);
 }
-XL320_Read_Data(__XL320_HandleTypeDef *XL320_Handle); 	// Later
-XL320_Set_Position(__XL320_HandleTypeDef *XL320_Handle, uint16_t position){
+
+void XL320_Read_Data(__XL320_HandleTypeDef *XL320_Handle); 	// Later
+void XL320_Set_Position(__XL320_HandleTypeDef *XL320_Handle, uint16_t position){
 	// angle = position * 0.29°
 	position = (position < 1023) ? position : 1023;
 	XL320_Write_Data(XL320_Handle, XL320_REG_GOAL_POSITION, position);
 }
-
-XL320_Set_Speed(__XL320_HandleTypeDef *XL320_Handle, uint16_t speed){
+void XL320_Set_Speed(__XL320_HandleTypeDef *XL320_Handle, uint16_t speed){
 	// rotary speed = speed * 0.111 rpm, on 10 bits,
 	// in wheel mode,  11th bit = direction bit control
 	if(XL320_Handle->control_mode == XL320_JOIN_MODE){
@@ -115,20 +189,19 @@ XL320_Set_Speed(__XL320_HandleTypeDef *XL320_Handle, uint16_t speed){
 		XL320_Write_Data(XL320_Handle, XL320_REG_GOAL_SPEED, speed);
 	}
 }
-
-XL320_Set_Torque_Limit(__XL320_HandleTypeDef *XL320_Handle, uint16_t torque_limit){
+void XL320_Set_Torque_Limit(__XL320_HandleTypeDef *XL320_Handle, uint16_t torque_limit){
 	torque_limit = (torque_limit < 0x3FF) ? torque_limit : 0x3FF;
 	XL320_Write_Data(XL320_Handle, XL320_REG_GOAL_TORQUE, torque_limit);
 }
-
-
-XL320_Set_Led_Color(__XL320_HandleTypeDef *XL320_Handle, uint16_t color){
+void XL320_Set_Control_Mode(__XL320_HandleTypeDef *XL320_Handle, uint16_t control_mode){
+	if(control_mode == XL320_WHEEL_MODE) XL320_Write_Data(XL320_Handle, XL320_REG_CONTROL_MODE, XL320_WHEEL_MODE);
+	if(control_mode == XL320_JOIN_MODE)	XL320_Write_Data(XL320_Handle, XL320_REG_CONTROL_MODE, XL320_JOIN_MODE);
+}
+void XL320_Set_Led_Color(__XL320_HandleTypeDef *XL320_Handle, uint16_t color){
 	XL320_Write_Data(XL320_Handle, XL320_REG_LED, color);
 }
-
-XL320_Set_ID(__XL320_HandleTypeDef *XL320_Handle, uint8_t); // Later
-
-XL320_Update_CRC(__XL320_HandleTypeDef *XL320_Handle){
+void XL320_Set_ID(__XL320_HandleTypeDef *XL320_Handle, uint8_t); // Later
+void XL320_Update_CRC(__XL320_HandleTypeDef *XL320_Handle){
 	uint16_t i, j;
 	uint16_t crc_accum = 0;
 
@@ -140,4 +213,19 @@ XL320_Update_CRC(__XL320_HandleTypeDef *XL320_Handle){
 	}
 
 	XL320_Handle->crc = crc_accum;
+}
+
+HAL_StatusTypeDef XL320_Check_CRC(__XL320_HandleTypeDef *XL320_Handle){
+	uint16_t i, j;
+	uint16_t crc_accum = 0;
+	uint16_t crc_read = XL320_Handle->rx_buffer[XL320_Handle->rx_data_length+5] + (((uint16_t)XL320_Handle->rx_buffer[XL320_Handle->rx_data_length+6])<<8);
+
+	for(j = 0; j < XL320_Handle->rx_data_length+5; j++)
+	{
+		i = ((uint16_t)(crc_accum >> 8) ^ XL320_Handle->rx_buffer[j]) & 0xFF;
+		crc_accum = (crc_accum << 8) ^ crc_table[i];
+	}
+
+	if(crc_accum == crc_read) return HAL_OK;
+	else return HAL_ERROR;
 }

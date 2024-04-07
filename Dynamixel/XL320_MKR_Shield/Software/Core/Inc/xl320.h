@@ -69,6 +69,15 @@
 #define XL320_HEADER_3						0xFD
 #define XL320_RSRV							0x00
 
+////////// HEADER ///////////
+#define ERROR_RESULT						0x01
+#define ERROR_INSTR							0x02
+#define ERROR_CRC							0x03
+#define ERROR_DATA_RANGE					0x04
+#define ERROR_DATA_LENGTH					0x05
+#define ERROR_DATA_LIMIT					0x06
+#define ERROR_ACCESS						0x07
+
 ////////// CTRL MODE ///////////
 #define XL320_WHEEL_MODE					1
 #define XL320_JOIN_MODE						2	// Default
@@ -88,13 +97,19 @@
 #define XL320_UART_TX						SET
 #define XL320_CRC_LENGTH					2
 
+#define MAX_BUFFER_LENGTH					64
+#define MAX_BUFFER_DEBUG_LENGTH				256
+
+
 typedef struct __XL320_HandleTypeDef
 {											// Default	Min 	Max
 	UART_HandleTypeDef *huart;
+	UART_HandleTypeDef *huart_debug;
 	GPIO_TypeDef *tx_En_Port;
 	uint16_t tx_En_Pin;
 	uint16_t model_number;					// 350
 	uint8_t firmware_version;				// -
+	uint8_t error_code;
 	uint8_t id;								// 1		0		252
 	uint8_t baudrate;						// 3		0		3
 	uint8_t	return_delay_time;				// 250		0		254
@@ -107,25 +122,48 @@ typedef struct __XL320_HandleTypeDef
 	uint16_t max_torque;					// 1023		0		1023
 	uint8_t status_return_level;			// 2		0		2
 	uint8_t shutdown_error_information;		// 3		0		7
+	uint8_t torque_enable;
+	uint8_t led;
+	uint8_t D_Gain;
+	uint8_t I_Gain;
+	uint8_t P_Gain;
+	uint16_t goal_position;
+	uint16_t moving_speed;
+	uint16_t torque_limit;
+	uint16_t present_position;
+	uint16_t present_speed;
+	uint16_t present_load;
+	uint8_t present_voltage;
+	uint8_t present_temperature;
+	uint8_t if_registered_instr;
+	uint8_t is_moving;
+	uint8_t hardware_error_status;
+	uint16_t min_current_th;
 	uint16_t crc;
-	uint8_t tx_buffer[64];
+	uint8_t tx_buffer[MAX_BUFFER_LENGTH];
 	uint8_t tx_data_length;
-	uint8_t rx_buffer[64];
+	uint8_t rx_buffer[MAX_BUFFER_LENGTH];
 	uint8_t rx_data_length;
+	uint8_t tx_buffer_debug[MAX_BUFFER_DEBUG_LENGTH];
+	uint8_t tx_data_debug_length;
 } __XL320_HandleTypeDef;
 
 extern __XL320_HandleTypeDef hxl320;
 
-XL320_Init(__XL320_HandleTypeDef *XL320_Handle, UART_HandleTypeDef *huart, GPIO_TypeDef *TxEnPort, uint16_t TxEnPin, uint8_t id, uint8_t baudrate);
-XL320_Set_UART_RxTxMode(__XL320_HandleTypeDef *XL320_Handle, GPIO_PinState mode);
-XL320_Write_Data(__XL320_HandleTypeDef *XL320_Handle, uint16_t Address, uint16_t Value);
-//XL320_Read_Data(__XL320_HandleTypeDef *XL320_Handle);
-XL320_Set_Position(__XL320_HandleTypeDef *XL320_Handle, uint16_t position);
-XL320_Set_Speed(__XL320_HandleTypeDef *XL320_Handle, uint16_t speed);
-XL320_Set_Torque_Limit(__XL320_HandleTypeDef *XL320_Handle, uint16_t torque_limit);
-XL320_Set_Led_Color(__XL320_HandleTypeDef *XL320_Handle, uint16_t color);
-//XL320_Set_ID(__XL320_HandleTypeDef *XL320_Handle);
-//XL320_Set_Baudrate(__XL320_HandleTypeDef *XL320_Handle);
-XL320_Update_CRC(__XL320_HandleTypeDef *XL320_Handle);
+void XL320_Init(__XL320_HandleTypeDef *XL320_Handle, UART_HandleTypeDef *huart, GPIO_TypeDef *TxEnPort, uint16_t TxEnPin, uint8_t id, uint8_t baudrate);
+void XL320_Init_debug(__XL320_HandleTypeDef *XL320_Handle, UART_HandleTypeDef *huart, UART_HandleTypeDef *huart_debug, GPIO_TypeDef *TxEnPort, uint16_t TxEnPin, uint8_t id, uint8_t baudrate);
+HAL_StatusTypeDef XL320_Ping(__XL320_HandleTypeDef *XL320_Handle);
+void XL320_Set_UART_RxTxMode(__XL320_HandleTypeDef *XL320_Handle, GPIO_PinState mode);
+void XL320_Write_Data(__XL320_HandleTypeDef *XL320_Handle, uint16_t Address, uint16_t Value);
+//void XL320_Read_Data(__XL320_HandleTypeDef *XL320_Handle);
+void XL320_Set_Position(__XL320_HandleTypeDef *XL320_Handle, uint16_t position);
+void XL320_Set_Speed(__XL320_HandleTypeDef *XL320_Handle, uint16_t speed);
+void XL320_Set_Torque_Limit(__XL320_HandleTypeDef *XL320_Handle, uint16_t torque_limit);
+void XL320_Set_Control_Mode(__XL320_HandleTypeDef *XL320_Handle, uint16_t control_mode);
+void XL320_Set_Led_Color(__XL320_HandleTypeDef *XL320_Handle, uint16_t color);
+//void XL320_Set_ID(__XL320_HandleTypeDef *XL320_Handle);
+//void XL320_Set_Baudrate(__XL320_HandleTypeDef *XL320_Handle);
+void XL320_Update_CRC(__XL320_HandleTypeDef *XL320_Handle);
+HAL_StatusTypeDef XL320_Check_CRC(__XL320_HandleTypeDef *XL320_Handle);
 
 #endif /* INC_XL320_H_ */
